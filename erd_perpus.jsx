@@ -1,0 +1,356 @@
+import { useState } from "react";
+
+const RH = 22, HH = 36, TW = 215, W = 900, H = 770;
+
+const TABLES = [
+  { id:"users", label:"users", x:290, y:20, color:"#60a5fa", hdr:"#1e3a8a",
+    fields:[
+      {n:"id_user",t:"INT",pk:1},{n:"username",t:"VARCHAR(50)"},
+      {n:"email",t:"VARCHAR(100)"},{n:"nama_lengkap",t:"VARCHAR(100)"},
+      {n:"password",t:"VARCHAR(255)"},{n:"foto_profil",t:"VARCHAR(255)"},
+      {n:"role",t:"ENUM"},{n:"status",t:"TINYINT"},
+      {n:"last_login",t:"DATETIME"},{n:"created_at",t:"DATETIME"},
+      {n:"updated_at",t:"DATETIME"},
+    ]},
+  { id:"anggota", label:"anggota", x:30, y:20, color:"#34d399", hdr:"#064e3b",
+    fields:[
+      {n:"id_anggota",t:"INT",pk:1},{n:"id_user",t:"INT",fk:1},
+      {n:"nim_nis",t:"VARCHAR(50)"},{n:"alamat",t:"TEXT"},
+      {n:"no_telp",t:"VARCHAR(20)"},{n:"foto_ktp",t:"VARCHAR(255)"},
+      {n:"created_at",t:"DATETIME"},
+    ]},
+  { id:"kategori", label:"kategori", x:620, y:20, color:"#fbbf24", hdr:"#78350f",
+    fields:[
+      {n:"id_kategori",t:"INT",pk:1},{n:"nama_kategori",t:"VARCHAR(100)"},
+      {n:"deskripsi",t:"TEXT"},{n:"created_at",t:"DATETIME"},
+    ]},
+  { id:"notifikasi", label:"notifikasi", x:30, y:235, color:"#a78bfa", hdr:"#3b0764",
+    fields:[
+      {n:"id_notifikasi",t:"INT",pk:1},{n:"id_user",t:"INT",fk:1},
+      {n:"judul",t:"VARCHAR(200)"},{n:"pesan",t:"TEXT"},
+      {n:"link",t:"VARCHAR(255)"},{n:"is_read",t:"TINYINT"},
+      {n:"created_at",t:"DATETIME"},
+    ]},
+  { id:"buku", label:"buku", x:620, y:155, color:"#f87171", hdr:"#7f1d1d",
+    fields:[
+      {n:"id_buku",t:"INT",pk:1},{n:"id_kategori",t:"INT",fk:1},
+      {n:"judul_buku",t:"VARCHAR(200)"},{n:"pengarang",t:"VARCHAR(150)"},
+      {n:"penerbit",t:"VARCHAR(150)"},{n:"tahun_terbit",t:"YEAR"},
+      {n:"isbn",t:"VARCHAR(20)"},{n:"deskripsi",t:"TEXT"},
+      {n:"gambar",t:"VARCHAR(255)"},{n:"stok",t:"INT"},
+      {n:"dipinjam",t:"INT"},{n:"created_at",t:"DATETIME"},
+      {n:"updated_at",t:"DATETIME"},
+    ]},
+  { id:"peminjaman", label:"peminjaman", x:155, y:445, color:"#fb923c", hdr:"#7c2d12",
+    fields:[
+      {n:"id_peminjaman",t:"INT",pk:1},{n:"id_anggota",t:"INT",fk:1},
+      {n:"id_buku",t:"INT",fk:1},{n:"tanggal_pinjam",t:"DATE"},
+      {n:"tgl_kembali_rencana",t:"DATE"},{n:"tgl_kembali_aktual",t:"DATE"},
+      {n:"status",t:"ENUM"},{n:"alasan_penolakan",t:"TEXT"},
+      {n:"diproses_oleh",t:"INT",fk:1},{n:"tanggal_proses",t:"DATETIME"},
+      {n:"denda",t:"DECIMAL"},{n:"created_at",t:"DATETIME"},
+    ]},
+  { id:"ulasan", label:"ulasan", x:620, y:500, color:"#f472b6", hdr:"#831843",
+    fields:[
+      {n:"id_ulasan",t:"INT",pk:1},{n:"id_buku",t:"INT",fk:1},
+      {n:"id_user",t:"INT",fk:1},{n:"rating",t:"TINYINT"},
+      {n:"komentar",t:"TEXT"},{n:"created_at",t:"DATETIME"},
+    ]},
+];
+
+function th(t){ return HH + t.fields.length * RH; }
+
+// Connections: FK table → PK table
+// d = SVG path, fx/fy = FK endpoint (circle), tx/ty = PK endpoint (arrowhead)
+// arr = arrowhead direction at PK end: r=right, l=left, u=up, d=down
+// lx/ly = label position midpoint
+const CONNS = [
+  { id:"c1", from:"anggota",    to:"users",
+    label:"1 : 1", color:"#34d399", dash:false,
+    d:"M 245,89 C 268,89 267,67 290,67",
+    fx:245, fy:89,  tx:290, ty:67,  arr:"r", lx:265, ly:72,
+    desc:"anggota.id_user → users.id_user (UNIQUE)" },
+  { id:"c2", from:"notifikasi", to:"users",
+    label:"1 : N", color:"#a78bfa", dash:true,
+    d:"M 245,304 C 270,304 268,67 290,67",
+    fx:245, fy:304, tx:290, ty:67,  arr:"r", lx:262, ly:186,
+    desc:"notifikasi.id_user → users.id_user" },
+  { id:"c3", from:"peminjaman", to:"users",
+    label:"1 : N", color:"#fb923c", dash:true,
+    d:"M 262.5,445 C 300,395 370,345 397.5,298",
+    fx:262.5, fy:445, tx:397.5, ty:298, arr:"u", lx:340, ly:365,
+    desc:"peminjaman.diproses_oleh → users.id_user" },
+  { id:"c4", from:"buku",       to:"kategori",
+    label:"1 : N", color:"#f87171", dash:true,
+    d:"M 727.5,155 L 727.5,144",
+    fx:727.5, fy:155, tx:727.5, ty:144, arr:"u", lx:742, ly:150,
+    desc:"buku.id_kategori → kategori.id_kategori" },
+  { id:"c5", from:"peminjaman", to:"buku",
+    label:"1 : N", color:"#fb923c", dash:true,
+    d:"M 370,536 L 562,536 L 562,202 L 620,202",
+    fx:370, fy:536, tx:620, ty:202,  arr:"r", lx:573, ly:369,
+    desc:"peminjaman.id_buku → buku.id_buku" },
+  { id:"c6", from:"ulasan",     to:"buku",
+    label:"1 : N", color:"#f472b6", dash:true,
+    d:"M 727.5,500 L 727.5,477",
+    fx:727.5, fy:500, tx:727.5, ty:477, arr:"u", lx:742, ly:489,
+    desc:"ulasan.id_buku → buku.id_buku" },
+  { id:"c7", from:"peminjaman", to:"anggota",
+    label:"1 : N", color:"#fb923c", dash:true,
+    d:"M 155,514 L 15,514 L 15,230 L 137.5,230 L 137.5,210",
+    fx:155, fy:514, tx:137.5, ty:210, arr:"u", lx:28, ly:372,
+    desc:"peminjaman.id_anggota → anggota.id_anggota" },
+  { id:"c8", from:"ulasan",     to:"users",
+    label:"1 : N", color:"#f472b6", dash:true,
+    d:"M 835,591 L 875,591 L 875,148 L 505,148",
+    fx:835, fy:591, tx:505, ty:148,  arr:"l", lx:883, ly:370,
+    desc:"ulasan.id_user → users.id_user" },
+];
+
+function Arr({ x, y, dir, color }) {
+  const s = 7;
+  const pts = {
+    r: `${x},${y} ${x-s},${y-s*.5} ${x-s},${y+s*.5}`,
+    l: `${x},${y} ${x+s},${y-s*.5} ${x+s},${y+s*.5}`,
+    u: `${x},${y} ${x-s*.5},${y+s} ${x+s*.5},${y+s}`,
+    d: `${x},${y} ${x-s*.5},${y-s} ${x+s*.5},${y-s}`,
+  };
+  return <polygon points={pts[dir] || pts.r} fill={color} />;
+}
+
+export default function ERD() {
+  const [sel, setSel] = useState(null);
+  const [hov, setHov] = useState(null);
+  const focus = sel || hov;
+  const hilite = focus
+    ? new Set(CONNS.filter(c => c.from === focus || c.to === focus).map(c => c.id))
+    : null;
+
+  return (
+    <div style={{ background:"#060b18", minHeight:"100vh", padding:"20px 16px 40px", fontFamily:"system-ui,sans-serif" }}>
+
+      {/* ── Header ── */}
+      <div style={{ textAlign:"center", marginBottom:18 }}>
+        <div style={{ fontSize:10, color:"#334155", letterSpacing:4, textTransform:"uppercase", marginBottom:6 }}>
+          Entity Relationship Diagram
+        </div>
+        <h1 style={{ color:"#f1f5f9", margin:0, fontSize:22, fontWeight:800, letterSpacing:"-0.5px" }}>
+          📚 Perpustakaan Digital
+        </h1>
+        <p style={{ color:"#475569", margin:"8px 0 0", fontSize:12 }}>
+          <code style={{ color:"#60a5fa", background:"#0f172a", padding:"2px 7px", borderRadius:4, fontSize:11 }}>
+            perpus_digital
+          </code>
+          {" · "}7 tabel · 8 relasi · klik tabel untuk highlight
+        </p>
+      </div>
+
+      {/* ── Legend ── */}
+      <div style={{ display:"flex", gap:20, justifyContent:"center", marginBottom:18, flexWrap:"wrap" }}>
+        {[
+          { icon:"🔑", label:"Primary Key", color:"#fbbf24" },
+          { icon:"🔗", label:"Foreign Key",  color:"#60a5fa" },
+          { solid:true,  label:"Relasi 1:1", color:"#94a3b8" },
+          { dash:true,   label:"Relasi 1:N", color:"#94a3b8" },
+        ].map(({ icon, label, color, solid, dash }) => (
+          <div key={label} style={{ display:"flex", alignItems:"center", gap:6 }}>
+            {icon && <span style={{ fontSize:12 }}>{icon}</span>}
+            {(solid || dash) && (
+              <svg width={28} height={3}>
+                <line x1={0} y1={1.5} x2={28} y2={1.5}
+                  stroke={color} strokeWidth={2}
+                  strokeDasharray={dash ? "6,3" : ""} />
+              </svg>
+            )}
+            <span style={{ color:"#64748b", fontSize:11 }}>{label}</span>
+          </div>
+        ))}
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <svg width={10} height={10}><circle cx={5} cy={5} r={4} fill="#94a3b8"/></svg>
+          <span style={{ color:"#64748b", fontSize:11 }}>FK endpoint (N)</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <svg width={14} height={10}><polygon points="14,5 0,0 0,10" fill="#94a3b8"/></svg>
+          <span style={{ color:"#64748b", fontSize:11 }}>PK endpoint (1)</span>
+        </div>
+      </div>
+
+      {/* ── SVG Canvas ── */}
+      <div style={{ overflowX:"auto" }}>
+        <svg width={W} height={H} style={{ display:"block" }} onClick={() => setSel(null)}>
+          <defs>
+            <pattern id="bg-dots" width={24} height={24} patternUnits="userSpaceOnUse">
+              <circle cx={12} cy={12} r={0.7} fill="#1a2540" />
+            </pattern>
+          </defs>
+
+          {/* Background */}
+          <rect width={W} height={H} fill="#080f1f" />
+          <rect width={W} height={H} fill="url(#bg-dots)" />
+
+          {/* ── Connection lines (rendered below tables) ── */}
+          {CONNS.map(c => {
+            const dim = hilite && !hilite.has(c.id);
+            return (
+              <g key={c.id} opacity={dim ? 0.08 : 1}
+                style={{ transition:"opacity 0.2s" }}>
+                {/* glow */}
+                <path d={c.d} fill="none" stroke={c.color} strokeWidth={10}
+                  opacity={0.07} strokeLinecap="round" strokeLinejoin="round" />
+                {/* main line */}
+                <path d={c.d} fill="none" stroke={c.color}
+                  strokeWidth={dim ? 1.5 : 2.5}
+                  strokeLinecap="round" strokeLinejoin="round"
+                  strokeDasharray={c.dash ? "7,3" : ""} />
+                {/* FK end: pulsing dot */}
+                <circle cx={c.fx} cy={c.fy} r={8} fill={c.color} opacity={0.15} />
+                <circle cx={c.fx} cy={c.fy} r={4} fill={c.color} />
+                {/* PK end: arrowhead */}
+                <Arr x={c.tx} y={c.ty} dir={c.arr} color={c.color} />
+                {/* label pill */}
+                <rect x={c.lx-16} y={c.ly-9} width={32} height={16} rx={4}
+                  fill="#0a1020" stroke={c.color} strokeWidth={0.8} opacity={0.9} />
+                <text x={c.lx} y={c.ly+4} fontSize={8.5} fill={c.color}
+                  fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                  {c.label}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* ── Table cards ── */}
+          {TABLES.map(t => {
+            const h = th(t);
+            const active = sel === t.id;
+            const hovered = hov === t.id;
+            return (
+              <g key={t.id}
+                onClick={e => { e.stopPropagation(); setSel(p => p === t.id ? null : t.id); }}
+                onMouseEnter={() => setHov(t.id)}
+                onMouseLeave={() => setHov(null)}
+                style={{ cursor:"pointer" }}>
+
+                <defs>
+                  <clipPath id={`cp-${t.id}`}>
+                    <rect x={t.x} y={t.y} width={TW} height={h} rx={8} />
+                  </clipPath>
+                </defs>
+
+                {/* shadow */}
+                <rect x={t.x+5} y={t.y+5} width={TW} height={h} rx={8}
+                  fill="rgba(0,0,0,0.5)" />
+                {/* active glow */}
+                {(active || hovered) && (
+                  <rect x={t.x-3} y={t.y-3} width={TW+6} height={h+6} rx={10}
+                    fill="none" stroke={t.color}
+                    strokeWidth={active ? 2.5 : 1.5} opacity={active ? 0.8 : 0.4} />
+                )}
+                {/* body */}
+                <rect x={t.x} y={t.y} width={TW} height={h} rx={8}
+                  fill="#0c1526"
+                  stroke={active ? t.color : "#1a2d44"}
+                  strokeWidth={active ? 2 : 1} />
+                {/* header */}
+                <rect x={t.x} y={t.y} width={TW} height={HH} rx={8} fill={t.hdr} />
+                <rect x={t.x} y={t.y+HH-10} width={TW} height={10} fill={t.hdr} />
+                {/* top color accent */}
+                <rect x={t.x+2} y={t.y+1} width={TW-4} height={3} rx={4}
+                  fill={t.color} opacity={0.9} />
+                {/* table name */}
+                <text x={t.x+11} y={t.y+HH-11} fontSize={13} fontWeight="bold"
+                  fill={t.color} fontFamily="'Courier New',Courier,monospace">
+                  {t.label}
+                </text>
+                {/* field count badge */}
+                <rect x={t.x+TW-34} y={t.y+HH-24} width={28} height={14} rx={4}
+                  fill="rgba(0,0,0,0.3)" />
+                <text x={t.x+TW-20} y={t.y+HH-13} fontSize={8.5} fill={t.color}
+                  fontFamily="monospace" textAnchor="middle" opacity={0.7}>
+                  {t.fields.length}col
+                </text>
+
+                {/* fields */}
+                <g clipPath={`url(#cp-${t.id})`}>
+                  {t.fields.map((f, i) => {
+                    const fy = t.y + HH + i * RH;
+                    const cy = fy + RH / 2;
+                    return (
+                      <g key={f.n}>
+                        {/* row bg */}
+                        <rect x={t.x+1} y={fy} width={TW-2} height={RH}
+                          fill={i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent"} />
+                        {/* PK badge */}
+                        {f.pk && <>
+                          <rect x={t.x+4} y={cy-7.5} width={20} height={14} rx={3} fill="#451a03" />
+                          <text x={t.x+14} y={cy+4} fontSize={8} fill="#fbbf24"
+                            fontFamily="monospace" fontWeight="bold" textAnchor="middle">PK</text>
+                        </>}
+                        {/* FK badge */}
+                        {f.fk && <>
+                          <rect x={t.x+4} y={cy-7.5} width={20} height={14} rx={3} fill="#0f2d5a" />
+                          <text x={t.x+14} y={cy+4} fontSize={8} fill="#60a5fa"
+                            fontFamily="monospace" fontWeight="bold" textAnchor="middle">FK</text>
+                        </>}
+                        {/* field name */}
+                        <text x={t.x + (f.pk || f.fk ? 28 : 8)} y={cy + 4.5}
+                          fontSize={10.5}
+                          fill={f.pk ? "#fbbf24" : f.fk ? "#93c5fd" : "#8a9bb8"}
+                          fontFamily="'Courier New',Courier,monospace"
+                          fontWeight={f.pk ? "bold" : "normal"}>
+                          {f.n}
+                        </text>
+                        {/* field type */}
+                        <text x={t.x + TW - 6} y={cy + 4.5} fontSize={8.5}
+                          fill="#253447" fontFamily="monospace" textAnchor="end">
+                          {f.t}
+                        </text>
+                        {/* divider */}
+                        {i < t.fields.length - 1 && (
+                          <line x1={t.x+1} y1={fy+RH} x2={t.x+TW-1} y2={fy+RH}
+                            stroke="#131f32" strokeWidth={0.5} />
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* ── Relation list ── */}
+      <div style={{ maxWidth:900, margin:"24px auto 0" }}>
+        <div style={{ color:"#334155", fontSize:10, marginBottom:10,
+          textTransform:"uppercase", letterSpacing:3 }}>
+          Daftar Relasi (Foreign Keys)
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(310px,1fr))", gap:6 }}>
+          {CONNS.map(c => {
+            const active = !focus || c.from === focus || c.to === focus;
+            return (
+              <div key={c.id} style={{
+                background:"#0c1526", borderRadius:7, padding:"8px 12px",
+                borderLeft:`3px solid ${c.color}`,
+                display:"flex", justifyContent:"space-between", alignItems:"center",
+                opacity: active ? 1 : 0.25,
+                transition:"opacity 0.2s",
+              }}>
+                <code style={{ color:"#4a637d", fontSize:10, letterSpacing:"-0.2px" }}>
+                  {c.desc}
+                </code>
+                <span style={{
+                  color: c.color, fontWeight:700, fontSize:11,
+                  flexShrink:0, marginLeft:10,
+                  background:"rgba(0,0,0,0.3)", padding:"2px 7px", borderRadius:4,
+                }}>
+                  {c.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
